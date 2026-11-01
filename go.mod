@@ -1,3 +1,10 @@
-module github.com/dogmatiq/GITHUB_REPO_NAME
+module github.com/dogmatiq/zoltar
 
-go 1.21
+go 1.27.0
+
+require golang.org/x/tools v0.52.0
+
+require (
+	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+)
