@@ -37,7 +37,7 @@ func Example() {
 	greeting, _ := results[0].As[string]()
 	fmt.Println(greeting)
 
-	// Output:
+	// Prints:
 	// Hello, Zoltar!
 }
 
@@ -75,7 +75,7 @@ func ExamplePrediction_ValueOf() {
 	s, _ := addr.As[string]()
 	fmt.Println(s)
 
-	// Output:
+	// Prints:
 	// localhost:8080
 }
 
@@ -125,7 +125,7 @@ func ExampleValue_Timelines() {
 	slices.Sort(timelines)
 	fmt.Println(strings.Join(timelines, "\n"))
 
-	// Output:
+	// Prints:
 	// (unknown)
 	// Hello, world!
 }
@@ -161,7 +161,7 @@ func ExampleValue_BlindSpots() {
 		fmt.Println(b.Kind())
 	}
 
-	// Output:
+	// Prints:
 	// NotFollowed
 }
 
@@ -213,7 +213,7 @@ func ExampleTarget_Follow() {
 	s, _ := name.As[string]()
 	fmt.Println(s)
 
-	// Output:
+	// Prints:
 	// MYAPP_ADDR
 }
 
@@ -254,6 +254,6 @@ func ExampleReturnsResultOf() {
 	name, _ := results[0].As[string]()
 	fmt.Println(name)
 
-	// Output:
+	// Prints:
 	// HELLO
 }

@@ -5,12 +5,13 @@ comes next. Delete it once the work resumes.
 
 ## Where things are
 
-- **`api-design` branch (this repo)**: the public API, locked except for the
-  open questions below. Every function body panics with "not implemented", so
-  the examples in `example_test.go` fail until the implementation lands.
+- **`main` (this repo)**: the public API, locked except for the open
+  questions below. Every function body panics with "not implemented". The
+  examples in `example_test.go` use `// Prints:` instead of `// Output:`, so
+  they compile but don't run.
 - **`prototype` branch (this repo)**: the implementation, copied from
   enginekit's `internal/zoltar`. It uses the earlier API, so it doesn't match
-  `api-design`. See "Changes from the earlier API" in `docs/design.md`.
+  `main`. See "Changes from the earlier API" in `docs/design.md`.
 - **enginekit `zoltar` branch**: the same implementation, still at
   `internal/zoltar` in enginekit. Kept for reference only; new work happens
   here.
@@ -43,10 +44,11 @@ Generic methods (such as `Value.As`) need Go 1.27. Run Go commands with
 
 ## Next steps
 
-1. Answer the open questions, then merge `api-design` into `main`.
+1. Answer the open questions.
 2. Bring the prototype in line with the API, applying the renames
    (`Const` to `Known`, `Placeholder` to `Sentinel`, `ComputedBy` to
    `ReturnsResultOf`, `NoReturn` to `DoesNotReturn`, and so on) until the
-   examples pass.
+   examples pass, then rename each `// Prints:` in `example_test.go` back
+   to `// Output:` so that `go test` checks them.
 3. Work through steps 1b to 5 in `docs/design.md`.
 4. Port enginekit's `staticconfig` onto zoltar.
