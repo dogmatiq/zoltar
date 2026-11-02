@@ -33,11 +33,8 @@ Generic methods (such as `Value.As`) need Go 1.27. Run Go commands with
 
 ## Open questions
 
-1. Should `Value.NumField` return `(n int, ok bool)`? It returns 0 both for a
-   struct with no fields and when the number of fields isn't known. The
-   recommendation is yes, matching `Value.Len`.
-2. Should `docs/design.md` ship in this repo, or stay a working document?
-3. `ReturnsResultOf`'s doc was trimmed. These details were removed from it
+1. Should `docs/design.md` ship in this repo, or stay a working document?
+2. `ReturnsResultOf`'s doc was trimmed. These details were removed from it
    and might belong in `docs/design.md`: why only slices created for a
    variadic call are computed; that a nil error result becomes the zero value
    and a non-nil one is unknown; that uncomputed results keep their declared

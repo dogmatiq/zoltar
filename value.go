@@ -117,9 +117,9 @@ func (v Value) Equal(x Value) bool {
 	panic("not implemented")
 }
 
-// NumField returns the number of fields in v, which must be a struct, or 0 if
-// it isn't known.
-func (v Value) NumField() int {
+// NumField returns the number of fields in v, which must be a struct. ok is
+// false if v's dynamic type isn't known.
+func (v Value) NumField() (n int, ok bool) {
 	panic("not implemented")
 }
 
