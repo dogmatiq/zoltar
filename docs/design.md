@@ -12,18 +12,36 @@ These are the decisions that shape the API, with their reasons. Each is stated
 in the relevant doc comments; this is the record of why.
 
 - **Predict, then get values.** A prediction describes a call; values are got
-  from it with `ValueOf`, `Returns` and `Targets`. Arguments are variadic and
-  made with `Known`, `KnownAs`, `Zero`, `Unknown` or `Sentinel`. There are no
-  prediction options: code that runs during initialization is predicted by
-  predicting the package's `init` function, which runs every initializer in
-  Go's order, so package-level variables are exact at each point.
-- **Values carry their "as of" point.** `ValueOf(v, before)` takes the point
-  (required, never nil); everything read from a value afterwards is as of that
-  point. There is no "after".
+  from it with `ValueOf`, `ReturnValues` and `CallTargets`. Arguments are
+  variadic and made with `Known`, `KnownAs`, `Zero`, `Unknown` or `Sentinel`.
+  There are no prediction options: code that runs during initialization is
+  predicted by predicting the package's `init` function, which runs every
+  initializer in Go's order, so package-level variables are exact at each
+  point.
+- **Values describe one point.** `ValueOf(v, before)` takes an instruction
+  (required, never nil), and everything inside the result, such as what a
+  pointer points to, describes the program just before that instruction
+  executes. There is no "after".
 - **Timelines.** A value covers all of its timelines at once. Methods returning
   a `Value` combine; methods returning `ok` succeed only if every timeline
   agrees. Blind spots cover every timeline: a value with no blind spots is
-  known on every timeline.
+  known on every timeline. The meaning of `ok` is repeated on every method
+  that returns it, because the pattern is too vague to define once.
+- **Trustworthy booleans.** `Equal` returns `(equal, ok)` and `IsNil`
+  returns `(isNil, ok)`, and the first result is only true if `ok` is too, so
+  it can be used alone as "definitely". `Equal` also reports known
+  inequality, which a plain `bool` couldn't.
+- **Nothing there.** When nothing exists on any timeline, `FieldByName`,
+  `Elem` and `Index` return the zero `Value`, as `reflect` does, rather than
+  panic: a caller often can't know in advance. Timelines on which there's
+  nothing are left out, including nil timelines for `Elem`, `Func` and
+  `Origin`. `MapIndex` differs on purpose: a missing key gives the element
+  type's zero value, as `m[key]` does in Go.
+- **Control flow.** Reachability is "may execute given the predicted
+  arguments": `IsReachable`, `IsReachableFrom`, `ReachableBlocks` and
+  `ReachableSuccessors` share the word. `IsReachableOnEveryReturnPath` is
+  false if `MayReturn` is false, rather than vacuously true, so it never
+  claims that a block in a function that can't return always executes.
 - **Never wrong, only less specific.** The current implementation has known
   exceptions; see "Soundness (step 2)".
 - **Eager values and control flow.** Making a prediction works out which code
@@ -41,20 +59,26 @@ in the relevant doc comments; this is the record of why.
   cached result counts the work it originally cost, so whether the limit is
   hit never depends on what was asked before. The heaviest normal question
   measured used about 0.6 million units; the limit is around 5-10 million.
-  Recursion depth is also limited (32 calls). Reaching either gives a `Limit`
-  blind spot. Termination isn't speed: a call graph that fans out with distinct
-  arguments costs one prediction per path.
+  Recursion depth is also limited (32 calls). Reaching either gives a
+  `LimitBlindSpot`. Termination isn't speed: a call graph that fans out with
+  distinct arguments costs one prediction per path.
 - **Nil versus ok.** Results that can be absent use `ok` where a zero value
   could be a real answer (`DynamicType`, `As`, `Len`, `Origin`, ...), and nil
   for pointers and interfaces, as `go/types` and `go/ssa` do (`Parent`,
   `CallSite`, `Origin.Prediction`). A pass's `Parent` is the prediction
-  containing the loop; its `CallSite` is nil, as it isn't a call.
-- **Mixing values between predictions.** Values that refer to memory belong to
-  the prediction that produced them. They can be used with any prediction
-  related to it by followed calls (which share variables) and passed as
-  arguments to any prediction. Using one with an unrelated prediction,
-  including a different pass of a loop, panics. Constants, unknowns and
-  sentinels belong to none.
+  containing the loop; its `CallSite` is nil, as it isn't a call. The same
+  goes for `Func.Predict`, whose `Parent` is the prediction the function
+  value came from.
+- **Mixing values between predictions.** Every prediction reachable through
+  `Parent` (followed calls, loop passes and `Func.Predict`) shares its root's
+  variables, so a pointer that a loop doesn't change is the same inside a pass
+  as before the loop, and a closure's captured pointer is the same inside
+  `Func.Predict` as outside it. Only values from separate calls to
+  `Predictor.Predict` refer to unrelated variables. For those, `Equal` gives
+  ok=false and `MapIndex` treats the key as unknown; only `Combine`, whose
+  result would span two sets of variables, panics. Any value can be passed as
+  an argument to any prediction. Constants, unknowns and sentinels belong to
+  no prediction.
 - **Sentinels.** A sentinel is a unique value recognized by identity, like a
   sentinel error. It has no blind spots. A sentinel of an interface type has
   no dynamic type (`DynamicType` returns ok=false), which isn't a blind spot.
@@ -63,15 +87,27 @@ in the relevant doc comments; this is the record of why.
   `FollowAll` targets, unsupported methods for a type) panics, and each doc
   says so.
 - **Assumptions are claims.** Combining them keeps all their claims, so the
-  result is the most specific they allow together. `Opaque` claims nothing, so
-  combined with others it has no effect; on its own it replaces any built-in
-  assumptions with none. `WithAssumptions` needs at least one assumption (it
-  panics otherwise), and a later call for the same function replaces an
-  earlier one, including the built-in assumptions. Assumptions about a
-  function the program doesn't contain are ignored, so one list works with
-  any program. `ReturnsResultOf` claims only results, so a call it doesn't
-  compute is treated as for `Opaque` unless other assumptions say otherwise;
-  `New` panics if its function's shape doesn't match.
+  result is the most specific they allow together. `WithAssumptions` with no
+  assumptions claims nothing: the function isn't followed, and its effects are
+  unknown. There's no `Opaque` value, because one that has no effect when
+  combined isn't really an assumption. A later call for the same function
+  replaces an earlier one, including the built-in assumptions. Assumptions
+  about a function the program doesn't contain are ignored, so one list works
+  with any program. `ReturnsResultOf` claims only results, so a call it
+  doesn't compute is treated as having no assumptions unless others say
+  otherwise; `New` panics if its function's shape doesn't match.
+- **Following structure.** Every way into a value has its own method
+  (`Elem`, `Fields`, `FieldByName`, `SliceElements`, `MapEntries`,
+  `Func.Captures`), and `Origin` is comparable with `==`, identifying a
+  variable, so callers can walk a value themselves and stop at cycles. There
+  is no built-in deep search: it would flatten away the structure, and it's a
+  few lines for a caller to write.
+- **Lists are slices.** Every method that returns several things returns a
+  slice, never an iterator. Values and control flow are computed eagerly, so
+  laziness saves nothing; slices match `go/ssa`, which callers use alongside
+  this package; and callers get `len` and indexing (`Args()[0]` is the
+  receiver). `Fields` and `Captures` return values in the order of the
+  struct's fields and `ssa.Function.FreeVars`, so they need no keys.
 
 ## Changes from the earlier API
 
@@ -83,16 +119,16 @@ in the relevant doc comments; this is the record of why.
 | `Options` struct | functional options; currently just `WithAssumptions` |
 | `Options.Skip`, `IsStandardLibrary` | the built-in assumptions from the census; skipping is a per-function classification inside it, not an option |
 | `Options.MaxSteps`, `DefaultMaxSteps` | no budget |
-| `Options.MaxCallDepth`, `DefaultMaxCallDepth` | internal constant; `Limit` blind spot |
+| `Options.MaxCallDepth`, `DefaultMaxCallDepth` | internal constant; `LimitBlindSpot` |
 | `Options.Hooks`, `Hook`, `HookedCall`, `Custom` | `WithAssumptions`: the same mechanism, restricted to declarative assumptions and constant→constant functions; `Origin` provides the metadata hooks used to smuggle |
 | `Evaluator.Invoke(fn, args, captured)` | `Predictor.Predict(fn, args)`; `Func.Predict` for function values |
 | `InvokeOption`, `MayRunDuringInit` | none: predict the package's `init` function and follow calls from it, which gives the exact initialization state at each point |
 | `Constant`, `OneOf`, `TypeOnly`, `Unknown`, `Pointer`, `FieldPointer`, `Composite`, `Slice`, `Func`, `Tuple`, `Placeholder` structs | the single `Value` and its methods |
 | `Placeholder(t)` | `Sentinel(t)`: a unique value recognized by identity, like a sentinel error |
 | `Invocation.ValueOf(v, before)` | `Prediction.ValueOf(v, before)`, with `before` now required |
-| `Invocation.ValueAt` | values carry their own "as of" point |
+| `Invocation.ValueAt` | values describe the point they were predicted at |
 | `Target.Func`, `Target.Args` fields | `Target.Func()`, `Target.Args()` methods |
-| plain `error` strings from `Targets`/`Follow` | `BlindSpot`, which implements `error` |
+| plain `error` strings from `CallTargets`/`Follow` | `BlindSpot`, which implements `error` |
 | `Invocation.Iteration(index, i, over)` | `Prediction.Loops()` and `Loop.Pass(i)`: the predictor finds range loops itself |
 | `Invocation.Condition` | `ValueOf(ifInstr.Cond, ifInstr).As[bool]()` |
 | `AsBool`, `AsInt`, `AsString` | `Value.As[T]()` |
@@ -103,10 +139,58 @@ in the relevant doc comments; this is the record of why.
 | `IsKnown`, `Reason` | `HasBlindSpots`, `BlindSpots` |
 | `IsNil`, `Equal` | methods on `Value` |
 | `Possibilities`, `OneOf` | `HasSingleTimeline`, `Timelines` |
-| `Contains`, `Evaluator.ContainsDeep` | `Value.Reachable()` |
+| `Contains`, `Evaluator.ContainsDeep` | none: walk the value with the structural methods, using `Origin` to stop at cycles |
 | `Map` | methods on `Value` combine timelines themselves |
-| `Slice.Elems`, `Element` fields | `Elements()`, `SliceElements`, `Element` methods |
-| `Func.Func`, `Func.Captured` | `Func.Declared()`, `Func.Receiver()`, `Func.Predict()` |
+| `Slice.Elems`, `Element` fields | `SliceElements()`, `SliceElements`, `SliceElement` methods |
+| `Func.Func`, `Func.Captured` | `Func.DeclaredFunc()`, `Func.Receiver()`, `Func.Captures()`, `Func.Predict()` |
+
+## Changes from the prototype branch
+
+The `prototype` branch implements an intermediate version of the API. Bringing
+it in line with `main` means these changes, as well as those in the table
+above.
+
+| Prototype | Now |
+|---|---|
+| `Const`, `ConstAs` | `Known`, `KnownAs` |
+| `Placeholder` | `Sentinel` |
+| `ComputedBy` | `ReturnsResultOf` |
+| `NoReturn` | `DoesNotReturn` |
+| `Opaque` | `WithAssumptions` with no assumptions |
+| `Input`, `NotFollowed`, `Unsupported`, `Limit`, `Unpredictable` | the same with a `BlindSpot` suffix, such as `InputBlindSpot`; `String` still returns the short name |
+| `Predictor.Predict(fn, args []Value, opts...)` | `Predict(ctx, fn, args...)`, returning an error |
+| `PredictOption`, `MayRunDuringInit` | none |
+| `Predictor.ForEachInstruction`, `Predictor.Program` | none |
+| `Prediction.Predictor`, `Depth`, `IsRecursive` | none |
+| `Prediction.ValueOf(v, before) Value` | `ValueOf(ctx, v, before) (Value, error)` |
+| `Prediction.Returns` | `ReturnValues(ctx)` |
+| `Prediction.Targets` | `CallTargets(ctx, call)` |
+| `Prediction.Iteration` | `Loops`, `Loop.Pass(ctx, i)` |
+| `CanRun` | `IsReachable` |
+| `CanReach(from, to)` | `IsReachableFrom(b, src)`; every block is reachable from itself |
+| `Blocks`, `NextBlocks` (iterators) | `ReachableBlocks`, `ReachableSuccessors` (slices) |
+| `BlocksFrom`, `AlwaysLeadsTo` | none |
+| `AlwaysRuns` | `IsReachableOnEveryReturnPath`, false if the function can't return; new `MayReturn` |
+| `Target.Follow()`, `FollowAll(cs)` | `Follow(ctx)`, `FollowAll(ctx, targets)` |
+| `Func.Declared` | `DeclaredFunc` |
+| `Func.Predict(args []Value, opts...)` | `Predict(ctx, args...)`, which makes a child of the prediction the function value came from, not a new root |
+| none | `Func.Captures` |
+| `Origin.Site` | `AllocationSite` |
+| `Origin.Pos` | none: `AllocationSite().Pos()` |
+| `Value.NumField`, `Value.Field` | `Fields` |
+| `Value.Elements`, `Element` | `SliceElements`, `SliceElement` |
+| `Value.Reachable` | none: walk the value, using `Origin` to stop at cycles |
+| `Value.Equal(x) bool` | `Equal(x) (equal, ok bool)` |
+| `Value.IsNil() (isNil, known bool)` | `IsNil() (isNil, ok bool)` |
+
+Behaviour that changes without a rename:
+
+- `FieldByName`, `Elem` and `Index` return the zero `Value` when nothing is
+  there on any timeline. `Index` no longer panics when `i` is out of range.
+- `Elem`, `Func` and `Origin` leave out timelines on which the value is nil.
+- Loop passes, and predictions made by `Func.Predict`, share variables with
+  their parent.
+- `WithAssumptions` accepts no assumptions.
 
 ## Map tracking (step 4)
 
@@ -163,20 +247,21 @@ For each function that a prediction reaches, zoltar does exactly one of:
   once slice capacity is tracked (step 2).
 - **Assume**: zoltar makes assumptions about the function without following
   it, and produces the most specific value those assumptions allow:
-  - it leaves no variable different (`ReadOnly`), so memory stays known
+  - it leaves no variable different (`ReadOnly`), so variables stay known
     across the call;
-  - it returns a new, non-nil pointer (`ReturnsNew`: `errors.New`,
-    constructor-like functions), so `IsNil` is known and `Origin` points at
-    the call;
+  - it returns a pointer to a new variable (`ReturnsNew`: `errors.New`,
+    constructor-like functions), so it's known not to be nil, and its
+    `Origin` is the call;
   - it never returns (`DoesNotReturn`: `os.Exit`, `log.Fatal`, `log.Panic`,
     `runtime.Goexit`), so the code after it can't run.
 
-  Anything the assumptions don't say is a `BlindSpot` of kind `NotFollowed`.
-- **Opaque**: nothing is known. The result is unknown and the arguments are
-  assumed to be modified. The census assigns this with a recorded reason.
-  Users can too: if following some third-party package ever proves too slow,
-  `WithAssumptions(pkgPath, name, Opaque)` is the escape hatch, at the same
-  per-function granularity as everything else.
+  Anything the assumptions don't say is a blind spot of kind
+  `NotFollowedBlindSpot`.
+- **No assumptions**: nothing is known. The result is unknown and the
+  arguments are assumed to be modified. The census assigns this with a
+  recorded reason. Users can too: if following some third-party package ever
+  proves too slow, `WithAssumptions(pkgPath, name)` is the escape hatch, at
+  the same per-function granularity as everything else.
 
 This is the hook mechanism again: a table keyed by function, consulted before
 following a call. What changed from `Options.Hooks` is not the mechanism but
@@ -206,8 +291,7 @@ z := zoltar.New(prog,
 Assumptions combine: `errors.New` is `ReadOnly` and `ReturnsNew`.
 `Pure` implies `ReadOnly`. `ReturnsResultOf` implies nothing about writes: a call
 that isn't computed may modify anything reachable from its arguments, unless
-another assumption, such as `Pure`, says otherwise. Combined with others,
-`Opaque` has no effect.
+another assumption, such as `Pure`, says otherwise.
 
 A non-nil error result is unknown for now. Step 2 makes it a new pointer
 whose dynamic type is unknown, as for `ReturnsNew` on an interface result.
@@ -219,9 +303,19 @@ will become.
 Zoltar's default assumptions about the standard library come from the census
 below.
 
-Caveat for the docs: a computed result comes from the analyzer's Go version,
-not the analyzed program's. For these functions the two haven't differed in
-years, but it should be said.
+Details of `ReturnsResultOf` that its doc leaves out, because they don't change
+how to use it:
+
+- A computed result comes from the analyzer's Go version, not the analyzed
+  program's. For the standard-library functions involved, the two haven't
+  differed in years.
+- A nil error result is the zero value. A non-nil one is unknown until step 2
+  (see the TODO there).
+- A call that isn't computed still gives results of the types the program
+  declares.
+- `fn` runs in the analyzer's process. If it calls `runtime.Goexit`, the
+  goroutine making the prediction exits, and if it blocks forever, the
+  prediction never finishes. The doc's "fn must return or panic" covers both.
 
 ### Interim default assumptions (part of step 1)
 
@@ -234,7 +328,7 @@ small hand-written table in the same (package path, name) form:
   and friends, `errors.New`, `strings.*`, `strconv.*`, ...), with the
   existing special case that `fmt` functions are read-only only when no
   argument can have a `String()` or `Error()` method.
-- Everything else in the standard library: `Opaque`.
+- Everything else in the standard library: no assumptions.
 
 Together these match today's behavior exactly, which step 1 requires. Two
 things deliberately wait for step 5, because they change answers:
@@ -442,9 +536,9 @@ Precision changes that change predictions, so they can't be in step 1:
   exactly known: that is running the program with constants, and it ends
   where the real program ends (`factorial(5)` is `120`). The depth limit for
   this case is raised well above 32, since each level is cheap; recursion
-  that never ends hits it and gets a `Limit` blind spot. A recursive call with
+  that never ends hits it and gets a `LimitBlindSpot`. A recursive call with
   any argument not exactly known is still not followed, with an
-  `Unsupported` blind spot, until merging exists (see "Not planned").
+  `UnsupportedBlindSpot`, until merging exists (see "Not planned").
 - **`ReturnsNew` for interface results** (`errors.New`, `fmt.Errorf`): the
   result holds a new pointer whose dynamic type is unknown, so `IsNil` is
   false and two calls differ. This makes `if err != nil` and comparisons
@@ -457,8 +551,8 @@ Precision changes that change predictions, so they can't be in step 1:
 
 ## Identity for unknowns (step 3)
 
-Today an unknown value has no identity, and `Equal` treats every value with
-blind spots as different from everything, including itself. `Pure` makes a
+Today an unknown value has no identity, so `Equal` can't tell whether two
+values with blind spots are the same, even a value and itself. `Pure` makes a
 stronger answer possible: the result of a pure call is fully determined by
 the function and its arguments, so two calls with the same arguments return
 the same value, even when neither is known.
@@ -466,12 +560,13 @@ the same value, even when neither is known.
 ```go
 a := slugify(name) // name is unknown
 b := slugify(name)
-// today:  a.Equal(b) == false
-// after:  a.Equal(b) == true, because both are "the result of slugify(name)"
+// today:  a.Equal(b) gives ok == false
+// after:  a.Equal(b) gives equal == true, ok == true, because both are
+//         "the result of slugify(name)"
 ```
 
-This needs unknowns to carry an identity, and `Equal` to become "known to be
-the same value, including two unknowns known to be the same unknown":
+This needs unknowns to carry an identity, so that `Equal` can report two
+unknowns as the same unknown:
 
 | Unknown | Same value when read again? |
 |---|---|
@@ -487,8 +582,8 @@ contents aren't known.
 
 The reshape designs `Value`'s internal representation with room for an
 identity, and writes `Equal`'s doc in its final form. Until identity is
-implemented, the "same unknown" clause simply never applies, so the doc is
-true throughout.
+implemented, `Equal` gives ok=false for every pair of unknowns, which the doc
+allows.
 
 Identity is where zoltar could become *wrong* rather than less specific, so
 it needs its own soundness tests, at least:
@@ -509,6 +604,10 @@ Each step is checked against the one before it.
    internal vocabulary brought in line. It must not change any answer: every
    existing test gives the same results before and after, and so do the
    tests of every program that uses zoltar.
+   Loop passes share variables with the prediction that contains the
+   loop: a variable created inside the loop is tagged with its pass, rather
+   than each pass having its own memory model. This changes no existing
+   answer, because the earlier API can't compare values across passes.
 1b. **Performance.** Remove the repeated work the profiling found (share
    memory-read results across nested reads; collapse unknowns while
    walking; cache walks inside cycles; don't store cache entries that can

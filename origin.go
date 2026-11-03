@@ -1,39 +1,33 @@
 package zoltar
 
-import (
-	"go/token"
+import "golang.org/x/tools/go/ssa"
 
-	"golang.org/x/tools/go/ssa"
-)
-
-// Origin returns where the memory that v refers to was created, such as the
-// variable that a pointer points to, or the array behind a slice.
+// An Origin is where a variable was allocated, such as by &T{}, new(), make()
+// or append(). It identifies the variable.
 //
-// ok is false if v doesn't refer to memory, such as a constant, or if its
-// timelines refer to memory created in different places.
-func (v Value) Origin() (_ Origin, ok bool) {
-	panic("not implemented")
-}
-
-// An Origin is where some memory was created. See [Value.Origin].
+// See [Value.Origin].
+//
+// Origins can be compared with ==. Equal origins refer to the same variable,
+// so an Origin can be used as a map key, such as to avoid visiting the same
+// variable twice when following a value's structure. Origins from separate
+// calls to [Predictor.Predict] are never equal.
 type Origin struct{}
 
-// Prediction returns the prediction in which the memory was created, or nil
-// for a package-level variable.
+// Prediction returns the prediction in which the variable was allocated, or
+// nil for a package-level variable.
 //
-// For memory created inside a constructor such as NewGreeter(), its
-// [Prediction.CallSite] is where NewGreeter was called.
+// For a variable allocated inside a followed call, such as to a constructor,
+// it's the prediction of that call, and its [Prediction.CallSite] is the
+// call.
 func (o Origin) Prediction() *Prediction {
 	panic("not implemented")
 }
 
-// Site returns the instruction that created the memory, such as &T{}, new()
-// or make(), or the package-level variable.
-func (o Origin) Site() ssa.Value {
-	panic("not implemented")
-}
-
-// Pos returns the position of [Origin.Site], or [token.NoPos] if it has none.
-func (o Origin) Pos() token.Pos {
+// AllocationSite returns the instruction that allocated the variable, such as
+// &T{}, new() or make(), or the package-level variable itself.
+//
+// For a variable returned by a function assumed to be [ReturnsNew], it's the
+// call to that function.
+func (o Origin) AllocationSite() ssa.Value {
 	panic("not implemented")
 }

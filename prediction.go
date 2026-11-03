@@ -2,140 +2,145 @@ package zoltar
 
 import (
 	"context"
-	"iter"
 
 	"golang.org/x/tools/go/ssa"
 )
 
 // A Prediction describes what happens when a function is called with specific
 // arguments.
-//
-// A [Value] that refers to memory, such as a pointer, belongs to the
-// prediction that produced it. It may be used with any prediction related to
-// that one by followed calls, and passed as an argument to any prediction.
-// Using it with any other prediction, including another pass of the same loop,
-// panics.
 type Prediction struct{}
 
-// ValueOf returns the value of v as of just before the instruction "before"
-// runs.
-//
-// v is any [ssa.Value] in p's function, such as a parameter, a constant or the
-// result of an instruction.
-//
-// before is an instruction in p's function, typically the one that uses v.
-// For a value that refers to memory, only the writes that can happen before it
-// are counted.
-//
-// It panics if v or before isn't in p's function, or before is nil.
-func (p *Prediction) ValueOf(ctx context.Context, v ssa.Value, before ssa.Instruction) (Value, error) {
-	panic("not implemented")
-}
-
-// Returns returns the values that p's function returns, one per result.
-func (p *Prediction) Returns(ctx context.Context) ([]Value, error) {
-	panic("not implemented")
-}
-
-// Targets returns the functions that a call may run, along with the arguments
-// each receives. A call through an interface or a function value may have
-// more than one.
-//
-// call is a call instruction in p's function.
-//
-// If the targets can't be predicted, such as for a call to a method of a
-// [Sentinel], the error is a [BlindSpot]. It panics if call isn't in p's
-// function.
-func (p *Prediction) Targets(ctx context.Context, call ssa.CallInstruction) ([]Target, error) {
-	panic("not implemented")
-}
-
-// Blocks yields each block of p's function that can run, starting with its
-// first block. See [Prediction.CanRun].
-func (p *Prediction) Blocks() iter.Seq[*ssa.BasicBlock] {
-	panic("not implemented")
-}
-
-// NextBlocks yields the blocks that can run immediately after b.
-func (p *Prediction) NextBlocks(b *ssa.BasicBlock) iter.Seq[*ssa.BasicBlock] {
-	panic("not implemented")
-}
-
-// CanRun returns true if b can run: some path to it doesn't depend on a
-// condition that is predicted to be false, or pass through a call to a
-// function that doesn't return.
-func (p *Prediction) CanRun(b *ssa.BasicBlock) bool {
-	panic("not implemented")
-}
-
-// CanReach returns true if "to" can run after "from". It panics if either
-// block isn't in p's function.
-func (p *Prediction) CanReach(from, to *ssa.BasicBlock) bool {
-	panic("not implemented")
-}
-
-// AlwaysRuns returns true if b runs whenever p's function returns normally.
-// Paths that end in a panic aren't counted, unless [Prediction.MayRecover] is
-// true.
-func (p *Prediction) AlwaysRuns(b *ssa.BasicBlock) bool {
-	panic("not implemented")
-}
-
-// MayRecover returns true if a deferred call in p's function may call
-// recover(), so that the function may return normally after a panic.
-func (p *Prediction) MayRecover() bool {
-	panic("not implemented")
-}
-
-// Function returns the function whose call p predicts.
+// Function returns the predicted function.
 func (p *Prediction) Function() *ssa.Function {
 	panic("not implemented")
 }
 
-// Parent returns the prediction that p was made from: the one containing the
-// call that p follows, or the loop that p is a pass of. It returns nil if p
-// was made by [Predictor.Predict] or [Func.Predict].
+// Parent returns the prediction that p came from, or nil if p was made by
+// [Predictor.Predict].
+//
+// If p was made by [Target.Follow] or [FollowAll], it's the prediction that
+// contains the call. If p is a pass of a loop, it's the prediction that
+// contains the loop. If p was made by [Func.Predict], it's the prediction that
+// the function value came from.
 func (p *Prediction) Parent() *Prediction {
 	panic("not implemented")
 }
 
-// CallSite returns the call in [Prediction.Parent] that p follows, or nil if
-// p isn't the prediction of a followed call.
+// CallSite returns the call that p follows, or nil if p wasn't made by
+// [Target.Follow] or [FollowAll].
+//
+// The call is in the parent's function. See [Prediction.Parent].
 func (p *Prediction) CallSite() ssa.CallInstruction {
 	panic("not implemented")
 }
 
-// A Target is a function that a call may run, along with the arguments it
-// receives. See [Prediction.Targets].
-type Target struct{}
+// ValueOf returns the value of v just before the given instruction executes.
+//
+// v is a parameter, free variable or instruction of the predicted function, or
+// a constant, global or function that it uses.
+//
+// before is an instruction of the predicted function, typically one that uses
+// v. The result describes v, and anything it refers to, immediately before
+// that instruction executes.
+//
+// It panics if v or before is nil, or if either isn't as described above.
+func (p *Prediction) ValueOf(ctx context.Context, v ssa.Value, before ssa.Instruction) (Value, error) {
+	_ = ctx
+	_ = v
+	_ = before
 
-// Func returns the function.
-func (t Target) Func() *ssa.Function {
 	panic("not implemented")
 }
 
-// Args returns the arguments. If the function is a method, the first argument
-// is the receiver.
-func (t Target) Args() []Value {
+// ReturnValues returns the values that the predicted function returns.
+func (p *Prediction) ReturnValues(ctx context.Context) ([]Value, error) {
+	_ = ctx
+
 	panic("not implemented")
 }
 
-// Follow returns a prediction of t's function, as called from the call that t
-// came from.
+// CallTargets returns the functions that the given call may run, along with the
+// arguments each receives.
 //
-// Unlike the predictor's own handling of calls, it ignores assumptions.
+// call is a call instruction in the predicted function.
 //
-// If the function can't be followed, such as when it has no body, the error
-// is a [BlindSpot]. It panics if t didn't come from [Prediction.Targets].
-func (t Target) Follow(ctx context.Context) (*Prediction, error) {
+// If the function to call isn't known statically, such as for a call through
+// an interface or a function variable, there is one target for each function
+// it could run.
+//
+// If the targets can't be predicted, such as for a call to a method of a
+// [Sentinel], the error is a [BlindSpot]. It panics if call isn't in the
+// predicted function.
+func (p *Prediction) CallTargets(ctx context.Context, call ssa.CallInstruction) ([]Target, error) {
+	_ = ctx
+	_ = call
+
 	panic("not implemented")
 }
 
-// FollowAll is like [Target.Follow], but returns a single prediction that
-// covers every one of ts, combining their arguments. See [Combine].
+// IsReachable returns true if b may execute when the function is called with
+// the predicted arguments.
 //
-// It panics if ts is empty, or if its targets don't all come from the same
-// call to [Prediction.Targets] and have the same function.
-func FollowAll(ctx context.Context, ts []Target) (*Prediction, error) {
+// It's equivalent to p.IsReachableFrom(b, p.Function().Blocks[0]).
+func (p *Prediction) IsReachable(b *ssa.BasicBlock) bool {
+	_ = b
+
+	panic("not implemented")
+}
+
+// IsReachableFrom returns true if b is reachable from src, given the predicted
+// arguments. Every block is reachable from itself.
+//
+// It panics if either block isn't in the predicted function.
+func (p *Prediction) IsReachableFrom(b, src *ssa.BasicBlock) bool {
+	_ = b
+	_ = src
+
+	panic("not implemented")
+}
+
+// ReachableBlocks returns the reachable blocks of the predicted function, in
+// the order of [ssa.Function.Blocks]. See [Prediction.IsReachable].
+func (p *Prediction) ReachableBlocks() []*ssa.BasicBlock {
+	panic("not implemented")
+}
+
+// ReachableSuccessors returns the successors of b that may actually execute
+// after it, given the predicted arguments, in the order of
+// [ssa.BasicBlock.Succs].
+func (p *Prediction) ReachableSuccessors(b *ssa.BasicBlock) []*ssa.BasicBlock {
+	_ = b
+
+	panic("not implemented")
+}
+
+// IsReachableOnEveryReturnPath returns true if every path on which the
+// function returns passes through b, given the predicted arguments.
+//
+// It returns false if [Prediction.MayReturn] is false.
+func (p *Prediction) IsReachableOnEveryReturnPath(b *ssa.BasicBlock) bool {
+	_ = b
+
+	panic("not implemented")
+}
+
+// MayReturn returns true if the function may return, given the predicted
+// arguments.
+//
+// Recovering from a panic counts as returning.
+func (p *Prediction) MayReturn() bool {
+	panic("not implemented")
+}
+
+// MayRecover returns true if a deferred call in the predicted function may
+// call recover(), so that the function may return normally after a panic.
+func (p *Prediction) MayRecover() bool {
+	panic("not implemented")
+}
+
+// Loops returns the loops in the predicted function that can be predicted one
+// pass at a time. Specifically, range loops over a slice, an array or an
+// integer.
+func (p *Prediction) Loops() []Loop {
 	panic("not implemented")
 }

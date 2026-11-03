@@ -29,7 +29,7 @@ func Example() {
 		panic(err)
 	}
 
-	results, err := p.Returns(ctx)
+	results, err := p.ReturnValues(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -108,7 +108,7 @@ func ExampleValue_Timelines() {
 		panic(err)
 	}
 
-	results, err := p.Returns(ctx)
+	results, err := p.ReturnValues(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -152,7 +152,7 @@ func ExampleValue_BlindSpots() {
 		panic(err)
 	}
 
-	results, err := p.Returns(ctx)
+	results, err := p.ReturnValues(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -193,7 +193,7 @@ func ExampleTarget_Follow() {
 	}
 
 	// Find what the call to env() runs, and continue inside it.
-	targets, err := p.Targets(ctx, callTo(addr, "env"))
+	targets, err := p.CallTargets(ctx, callTo(addr, "env"))
 	if err != nil {
 		panic(err)
 	}
@@ -246,7 +246,7 @@ func ExampleReturnsResultOf() {
 		panic(err)
 	}
 
-	results, err := p.Returns(ctx)
+	results, err := p.ReturnValues(ctx)
 	if err != nil {
 		panic(err)
 	}

@@ -12,12 +12,14 @@ import (
 // predictor, and everything it returned, is still usable afterwards.
 type Predictor struct{}
 
-// New returns a [Predictor] for prog, which must already be built. See
+// New returns a [Predictor] for p, which must already be built. See
 // [ssa.Program.Build].
 //
-// It panics if [ReturnsResultOf] was given something that isn't a function, or
-// a function of the wrong shape.
-func New(prog *ssa.Program, opts ...Option) *Predictor {
+// It panics if any of options is invalid for p.
+func New(p *ssa.Program, options ...Option) *Predictor {
+	_ = p
+	_ = options
+
 	panic("not implemented")
 }
 
@@ -36,6 +38,10 @@ func (p *Predictor) Predict(
 	fn *ssa.Function,
 	args ...Value,
 ) (*Prediction, error) {
+	_ = ctx
+	_ = fn
+	_ = args
+
 	panic("not implemented")
 }
 

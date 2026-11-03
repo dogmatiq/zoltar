@@ -34,9 +34,9 @@ A prediction is never wrong, only more or less specific.
   function called from two places can give two different, exact results. Calls
   through interfaces and function values are resolved to the functions they run.
 
-- **Memory-aware** — Pointers, struct fields and slice elements are predicted as
-  of a specific point in the code, counting only the writes that can happen
-  before it.
+- **Memory-aware** — Pointers, struct fields and slice elements are predicted at
+  a specific point in the code, counting only the writes that can happen before
+  it.
 
 - **Configurable assumptions** — Code that isn't followed, such as most of the
   standard library, is described by assumptions that you can add to or

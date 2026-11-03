@@ -1,19 +1,29 @@
 ## staticconfig on zoltar
 
-The zoltar design is in internal/zoltar/docs/design.md on the zoltar branch. The staticconfig port can start once its step 1 (the reshape) is done. Every staticconfig fixture must give the same results before and after the port.
+The zoltar design is in `docs/design.md`. The staticconfig port can start once
+its step 1 (the reshape) is done. Every staticconfig fixture must give the same
+results before and after the port.
 
 ### Example: staticconfig's route loop
 
 ```go
-p := z.Predict(appConfigure, []zoltar.Value{
+p, err := z.Predict(
+	ctx,
+	appConfigure,
 	zoltar.Unknown(appType, "the application"),
-	configurer, // zoltar.Placeholder(configurerType)
-})
+	configurer, // zoltar.Sentinel(configurerType)
+)
+if err != nil {
+	return err
+}
 
-routes := p.ValueOf(routesCall.Call.Args[0], routesCall)
+routes, err := p.ValueOf(ctx, routesCall.Call.Args[0], routesCall)
+if err != nil {
+	return err
+}
 
 for _, slice := range routes.Timelines() {
-	elems, _ := slice.Elements() // ok: a single timeline
+	elems, _ := slice.SliceElements() // ok: a single timeline
 	speculative := !elems.IsComplete()
 
 	for _, el := range elems.All() {
@@ -21,31 +31,56 @@ for _, slice := range routes.Timelines() {
 		speculative := speculative || el.IsConditional() || !indexKnown
 
 		for _, route := range el.Value().Timelines() {
-			if route.HasBlindSpots() {
-				// e.g. "ViaIntegration never returns" for ViaIntegration(nil)
-				continue
+			o, ok := route.Origin()
+			if !ok {
+				continue // partial: the route isn't known
 			}
-			o, _ := route.Origin()
-			via := o.Prediction()               // the dogma.ViaX() prediction
-			pos := via.CallSite().Pos()         // RoutedAt
-			h := route.FieldByName("handler")   // already as of c.Routes
-			hType, ok := h.DynamicType()        // e.g. *app.Handler
+			via := o.Prediction()       // the dogma.ViaX() prediction
+			pos := via.CallSite().Pos() // RoutedAt
+
+			// The handler is ViaX's parameter, which relies only on Dogma's
+			// public signature.
+			fn := via.Function()
+			h, err := via.ValueOf(ctx, fn.Params[0], fn.Blocks[0].Instrs[0])
+			if err != nil {
+				return err
+			}
+			hType, ok := h.DynamicType() // e.g. *app.Handler
 			...
 		}
 	}
 }
 ```
 
+To check during the port: this relies on each route referring to a variable
+allocated inside `ViaX`, so that it has an `Origin`. If Dogma's routes are
+plain structs, staticconfig instead finds the `ViaX` calls in the function
+itself, and reads the handler with `ValueOf` at each call.
+
 ### Example: should staticconfig follow this call?
 
+staticconfig walks each argument itself, following its structure and using
+`Origin` to stop at variables it has already visited:
+
 ```go
-for _, arg := range target.Args {
-	for x := range arg.Reachable() {
-		if x.Equal(configurer) ||
-			(x.HasBlindSpots() && typeMayHold(x.StaticType(), configurerType)) {
-			// the configurer may be passed to this call: follow it
+func mayHoldConfigurer(v zoltar.Value, seen map[zoltar.Origin]bool) bool {
+	for _, t := range v.Timelines() {
+		if o, ok := t.Origin(); ok {
+			if seen[o] {
+				continue
+			}
+			seen[o] = true
 		}
+		if eq, _ := t.Equal(configurer); eq {
+			return true
+		}
+		if t.HasBlindSpots() && typeMayHold(t.StaticType(), configurerType) {
+			return true // unknown, but could be the configurer
+		}
+		// Recurse into t.Elem(), t.Fields(), t.SliceElements(), t.MapEntries()
+		// and, for a function value, Func.Captures().
 	}
+	return false
 }
 ```
 

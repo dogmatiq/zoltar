@@ -1,7 +1,7 @@
 package zoltar
 
-// WithAssumptions is an [Option] that configures a [Predictor] to make the
-// given assumptions about a specific function instead of following it.
+// WithAssumptions is an [Option] that makes a [Predictor] use the given
+// assumptions about a function, instead of following it.
 //
 // See [Assumption].
 //
@@ -12,13 +12,18 @@ package zoltar
 // method, such as "SomeType.MyMethod". The type name does not include the
 // pointer asterisk, even if the method is declared on a pointer receiver.
 //
-// It replaces any prior assumptions about the same function. This includes
-// replacing the built-in assumptions that the [Predictor] makes about standard
-// library functions.
+// It replaces any prior assumptions about the same function, including the
+// built-in assumptions that the [Predictor] makes about standard library
+// functions. Assumptions about a function that the program doesn't contain are
+// ignored.
+//
+// With no assumptions, the predictor doesn't follow the function and assumes
+// nothing about it: its result is unknown, and it may modify anything reachable
+// from its arguments, and any package-level variable.
 func WithAssumptions(pkgPath, name string, assumptions ...Assumption) Option {
-	if len(assumptions) == 0 {
-		panic("at least one assumption must be provided")
-	}
+	_ = pkgPath
+	_ = name
+	_ = assumptions
 
 	panic("not implemented")
 }
@@ -26,9 +31,11 @@ func WithAssumptions(pkgPath, name string, assumptions ...Assumption) Option {
 // Assumption is something the predictor assumes about a function instead of
 // following it.
 //
-// Assumptions are combinatorial. For example, a function can have both the
-// [ReadOnly] and [ReturnsNew] assumptions, and the predictor gives the most
-// specific result they allow together.
+// Each assumption claims only what its doc says. Anything else, such as the
+// result, is unknown unless another assumption says otherwise. Assumptions
+// combine: for example, a function can have both the [ReadOnly] and
+// [ReturnsNew] assumptions, and the predictor gives the most specific result
+// they allow together.
 //
 // Pass the [WithAssumptions] options to [New] to add assumptions.
 type Assumption interface {
@@ -39,19 +46,20 @@ var (
 	// ReadOnly assumes that calling the function leaves no variable different:
 	// nothing reachable from its arguments, and no package-level variable.
 	//
-	// It may read memory, perform I/O, and lock and unlock mutexes, as long as
-	// nothing is left different afterwards. Memory stays known across the call.
-	// On its own, it leaves the result unknown, and the result may share memory
-	// with the arguments, as the result of slices.Clone shares its elements.
+	// The function may read variables, perform I/O, and lock and unlock
+	// mutexes, as long as nothing is left different afterwards, so variables
+	// stay known across the call.
 	ReadOnly Assumption = assumption{"ReadOnly"}
 
-	// ReturnsNew assumes that the function returns a new, non-nil pointer on
-	// every call, which nothing else refers to. [Value.IsNil] is known, and
-	// [Value.Origin] points at the call. The contents are unknown.
+	// ReturnsNew assumes that the function returns a pointer to a new variable
+	// on every call, which nothing else refers to.
+	//
+	// The result is known not to be nil, and its [Origin] is the call. The new
+	// variable's contents are unknown.
 	//
 	// For a function whose result is an interface, such as errors.New, the
-	// result holds a new pointer whose dynamic type is unknown: it is still
-	// not nil, and two calls still give different values.
+	// result holds a new pointer whose dynamic type is unknown. It's still not
+	// nil, and two calls still give different values.
 	ReturnsNew Assumption = assumption{"ReturnsNew"}
 
 	// DoesNotReturn assumes that every call panics, exits or blocks forever, so
@@ -60,12 +68,10 @@ var (
 
 	// Pure assumes that the function's result depends only on its arguments,
 	// including the contents of any slices passed to it. It implies [ReadOnly].
+	//
+	// Two calls with equal arguments give equal results, even if the results
+	// are unknown. See [Value.Equal].
 	Pure Assumption = assumption{"Pure"}
-
-	// Opaque assumes nothing: the result is unknown, and anything reachable
-	// from the arguments, and any package-level variable, may be modified.
-	// Combined with other assumptions, it has no effect.
-	Opaque Assumption = assumption{"Opaque"}
 )
 
 // assumption is the [Assumption] behind each of the predefined assumptions,
@@ -74,20 +80,22 @@ type assumption struct{ name string }
 
 func (assumption) isAssumption() {}
 
-// ReturnsResultOf assumes that the function returns the same results as fn,
-// such as strings.ToUpper for the function ToUpper in package "strings".
+// ReturnsResultOf assumes that the function returns the same results as
+// calling fn.
 //
 // fn is called by the predictor when every argument is known: a constant, or a
 // slice of constants created by a call to a variadic function. Otherwise, or
 // if fn panics, the results are unknown. fn must return or panic, and produce
 // the same results as the function in the program.
 //
-// fn's signature must have the same shape as the function's: the same number
-// of parameters and results, the same variadic-ness, and each parameter and
-// result of the same kind, as in package reflect. The kinds allowed are bool,
-// string, the numeric kinds, slices of those, and for a result, error. For a
-// method, the receiver is the first parameter. [New] panics if fn isn't such a
-// function.
+// fn must have the same signature as the function in the program, with two
+// exceptions. Its parameters and results only need to match in kind, so a
+// func(string) string can stand in for a function that takes and returns a
+// named string type. For a method, the receiver is fn's first parameter.
+//
+// Each parameter and result must be a boolean, a string, a number, or a slice
+// of those. A result may also be an error. [New] panics if fn doesn't meet
+// these requirements.
 //
 // It says nothing about what the function writes, so it's usually combined
 // with another assumption, such as [Pure]:
@@ -98,5 +106,7 @@ func (assumption) isAssumption() {}
 //		Pure,
 //	)
 func ReturnsResultOf(fn any) Assumption {
+	_ = fn
+
 	panic("not implemented")
 }
