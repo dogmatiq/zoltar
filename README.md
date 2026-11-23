@@ -1,14 +1,17 @@
 <div align="center">
 
-# Zoltar
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://dogmatiq.io/res/img/dynamic/repo/zoltar/banner/dark.svg">
+  <img alt="Dogmatiq zoltar" src="https://dogmatiq.io/res/img/dynamic/repo/zoltar/banner/light.svg" height="44">
+</picture>
 
 Zoltar is a static analyzer that predicts the values in a Go program without
 running it.
 
-[![Documentation](https://img.shields.io/badge/go.dev-documentation-007d9c?&style=for-the-badge)](https://pkg.go.dev/github.com/dogmatiq/zoltar)
-[![Latest Version](https://img.shields.io/github/tag/dogmatiq/zoltar.svg?&style=for-the-badge&label=semver)](https://github.com/dogmatiq/zoltar/releases)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/dogmatiq/zoltar/ci.yml?style=for-the-badge&branch=main)](https://github.com/dogmatiq/zoltar/actions/workflows/ci.yml)
-[![Code Coverage](https://img.shields.io/codecov/c/github/dogmatiq/zoltar/main.svg?style=for-the-badge)](https://codecov.io/github/dogmatiq/zoltar)
+[![API reference](https://dogmatiq.io/res/img/dynamic/repo/zoltar/badge/docs.svg)](https://pkg.go.dev/github.com/dogmatiq/zoltar)
+[![Latest version](https://dogmatiq.io/res/img/dynamic/repo/zoltar/badge/semver.svg)](https://github.com/dogmatiq/zoltar/releases)
+[![Build status](https://dogmatiq.io/res/img/dynamic/repo/zoltar/badge/build.svg)](https://github.com/dogmatiq/zoltar/actions/workflows/ci.yml)
+[![Code coverage](https://dogmatiq.io/res/img/dynamic/repo/zoltar/badge/coverage.svg)](https://codecov.io/github/dogmatiq/zoltar)
 
 </div>
 
